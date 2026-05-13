@@ -1,0 +1,16 @@
+[Unit]
+Description=Grafana Alert Receiver
+After=network.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/etc/homelab-monitoring.env
+WorkingDirectory=/opt/homelab-monitoring
+ExecStart=/usr/bin/python3 -m homelab_monitoring.grafana_alert_receiver
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+
