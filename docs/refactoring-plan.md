@@ -242,7 +242,7 @@ No cron/env, ativar um por vez:
 
 ### Checklist Fase 3
 
-- [ ] Implementar DISCORD_SILENT em todos os scripts
+- [x] Implementar DISCORD_SILENT em todos os scripts
 - [ ] Silenciar unbound_log_report → observar 2 dias
 - [ ] Silenciar anomaly_detector → observar 2 dias
 - [ ] Silenciar monitor → observar 3 dias
@@ -253,21 +253,24 @@ No cron/env, ativar um por vez:
 
 ## FASE 4 — Limpeza final
 
-Executar somente após Fase 3 estável por 2+ semanas.
+**Concluída em 2026-05-15.**
 
 ### Checklist Fase 4
 
-- [ ] Remover função `send_discord()` e imports relacionados de `monitor.py`
-- [ ] Remover função `send_discord()` e imports relacionados de `anomaly_detector.py`
-- [ ] Remover função `send_discord()` e imports relacionados de `unbound_log_report.py`
-- [ ] Remover variáveis `MESSAGE_FILE` desnecessárias dos scripts silenciados
-- [ ] Remover do `.env.example`: `MONITOR_MESSAGE_FILE`, `ANOMALY_MESSAGE_FILE`, `UNBOUND_LOG_MESSAGE_FILE`
-- [ ] Corrigir duplicação em `discord_unified.py`: substituir função `query()` local por `query_prometheus()` de `homelab_lib`
-- [ ] Tornar `unbound_log_report.py` condicional: só executar quando `cache_hit < 60` OU `queries_exceeded > 0` (ler do Prometheus no início do script antes de chamar journalctl)
-- [ ] Remover arquivos de message ID obsoletos em produção: `discord_message_id.txt`, `anomaly-message-id.txt`, `unbound-log-message-id.txt`
-- [ ] Atualizar `cron/homelab-monitoring.example` removendo entradas silenciadas ou ajustando
-- [ ] Atualizar `README.md` para refletir nova arquitetura
-- [ ] Remover `DISCORD_SILENT` do código (não mais necessário — os sends foram removidos)
+- [x] Remover função `send_discord()` e imports relacionados de `monitor.py`
+- [x] Remover função `send_discord()` e imports relacionados de `anomaly_detector.py`
+- [x] Remover função `send_discord()` e imports relacionados de `unbound_log_report.py`
+- [x] Remover função `send_discord()` e imports relacionados de `grafana_alert_receiver.py`
+- [x] Remover variáveis `MESSAGE_FILE` desnecessárias dos scripts silenciados
+- [x] Remover do `.env.example`: `MONITOR_MESSAGE_FILE`, `ANOMALY_MESSAGE_FILE`, `UNBOUND_LOG_MESSAGE_FILE`, `ALERT_WEBHOOK`, `ALERT_MSG_FILE`, `PROMETHEUS_URL`, `DISCORD_SILENT`
+- [x] Corrigir duplicação em `discord_unified.py`: substituir função `query()` local por `query_prometheus()` de `homelab_lib`; remover `import requests` e `PROMETHEUS_URL` locais
+- [x] Tornar `unbound_log_report.py` condicional: só executa journalctl + Ollama quando `cache_hit < 60%` OU `queries_exceeded > 0`
+- [x] Atualizar `cron/homelab-monitoring.example`
+- [x] Atualizar `README.md` para refletir nova arquitetura
+- [x] Remover `DISCORD_SILENT` do código (sends foram removidos)
+
+**Pendente (produção):** remover arquivos de message ID obsoletos após deploy:
+`discord_message_id.txt`, `anomaly-message-id.txt`, `unbound-log-message-id.txt`
 
 ### Validação final
 
@@ -316,3 +319,91 @@ grep -r "send_discord\|webhook_send_or_edit\|bot_send_or_edit" src/
 - Painel ao vivo: `src/homelab_monitoring/discord_unified.py` (a cada 3 min via cron)
 - LLM: Ollama em `http://10.0.100.187:11434`, modelo `qwen2.5:3b`
 - Este repositório é independente de `homelab-bot`, `cs2-ranking` e `steamwatch`
+
+---
+
+## Estado final do código (2026-05-15)
+
+O refatoramento foi concluído integralmente. O sistema funciona assim:
+
+**Um único painel Discord** — `discord_unified.py` é o único script que posta no Discord
+(exceto `weekly_report.py`, que mantém sua própria mensagem por ser um relatório de leitura longa).
+
+**Workers de fundo** — os outros scripts rodam nos seus crons, fazem seu trabalho
+(Prometheus, Ollama, journalctl) e escrevem arquivos JSON em `data/state/`.
+O unified lê esses arquivos a cada 3 minutos e exibe os campos relevantes.
+
+### Mapa de responsabilidades atual
+
+| Script | Faz | Escreve | Possui Discord? |
+|---|---|---|---|
+| `discord_unified.py` | Lê Prometheus + Kuma + state files | — | ✅ único painel |
+| `monitor.py` | Coleta 12 métricas + chama Ollama + salva history.json | `daily_analysis.json` | ❌ |
+| `anomaly_detector.py` | Lê history.json + cálculo σ + Ollama se anomalia | `anomaly_state.json` | ❌ |
+| `unbound_log_report.py` | journalctl + Ollama (só se DNS degradado) | `unbound_report.json` | ❌ |
+| `weekly_report.py` | Agrega 7 dias + Ollama | `weekly_summary.json` | ✅ própria mensagem |
+| `grafana_alert_receiver.py` | Flask :9999, recebe webhooks do Grafana + Ollama | `grafana_alerts.json` | ❌ |
+| `speedtest-prometheus.sh` | speedtest-ookla → Pushgateway | — | ❌ |
+| `homelab_lib.py` | Biblioteca compartilhada | — | — |
+
+### Onde cada coisa aparece no embed do unified
+
+```
+Título            → score composto + emoji de status
+Description       → timestamp + link dashboard + linha semanal (se weekly < 7 dias)
+Campo 📊 Geral    → score, uptime 24h, diagnóstico, resumo humano
+Campo 📡 Internet → latência, jitter
+Campo 🎮 Jogos    → TCP Discord, TCP Steam
+Campo 🔍 DNS      → resposta DNS, cache hit %
+Campo 🖥️ Serviços → Uptime Kuma (online/total, offline names, ping médio)
+Campo 🚀 Speedtest→ agora + média 7d + mínimos 7d
+Campo 🕐 Eventos  → picos HTTP/TCP/DNS últimos 30min (condicional)
+Campo ⚠️ Alertas  → alertas baseados em thresholds Prometheus (condicional)
+Campo 🤖 Análise IA → texto Ollama do monitor.py, atualizado 2×/dia (condicional, < 13h)
+Campo ⚠️ Anomalias → detector σ, só quando has_anomalies: true (condicional)
+Campo 📋 DNS Logs → logs Unbound, só quando has_issues: true (condicional)
+Campo 🔔 Alertas Grafana → alertas ativos do Grafana (condicional)
+Footer            → lista de fontes de dados
+```
+
+### Regras para modificar o código
+
+**Para mudar a estética do painel (textos, emojis, formatação, campos):**
+Editar apenas `discord_unified.py`. As funções relevantes são:
+- `build_embed()` — monta o embed completo; campos ficam na lista `fields`
+- `build_services_text()` — texto do campo Kuma
+- `build_speedtest_text()` — texto do campo Speedtest
+- `resumo_humano()` — lógica do texto de resumo na seção Geral
+- `ctx_*()` — funções de contexto inline por métrica (ex: `ctx_latencia`, `ctx_cache`)
+- `score_emoji()` — emoji do título baseado no score
+- `embed_color()` — cor da barra lateral do embed
+
+**Para mudar os campos dos workers (análise IA, anomalias, DNS logs, alertas Grafana):**
+Os campos condicionais são lidos de state files e montados dentro de `build_embed()`,
+nas linhas após os campos fixos. Procurar por `daily`, `anomaly`, `unbound`, `grafana`
+dentro de `build_embed()`.
+
+**Para mudar o que o monitor.py coleta ou como classifica:**
+Editar a lista `METRICS` no topo de `monitor.py` (query PromQL, thresholds warn/crit, invert).
+A classificação é feita por `classify()` no mesmo arquivo.
+
+**Para mudar os limiares do detector de anomalias:**
+`THRESHOLD_SIGMA = 2.0` no topo de `anomaly_detector.py`. Métricas invertidas (onde menor é pior)
+estão em `INVERTED_METRICS`.
+
+**Para mudar quando o unbound roda:**
+Os limiares da guarda condicional estão no início de `unbound_log_report.py`:
+`cache_hit < 60` e `queries_exceeded > 0`.
+
+**Para mudar o modelo LLM:**
+`OLLAMA_MODEL` em `homelab_lib.py` (padrão) ou via env `OLLAMA_MODEL`.
+O detector de anomalias tem override próprio: env `ANOMALY_OLLAMA_MODEL`.
+
+**Nunca fazer:**
+- Adicionar `webhook_send_or_edit` ou `bot_send_or_edit` em `monitor.py`,
+  `anomaly_detector.py`, `unbound_log_report.py` ou `grafana_alert_receiver.py`
+  (esses scripts são workers — sem Discord próprio)
+- Remover a escrita de `history.json` do `monitor.py`
+  (dela dependem `anomaly_detector` e `weekly_report`)
+- Adicionar `import requests` diretamente em `discord_unified.py`
+  (usa `query_prometheus` da lib)

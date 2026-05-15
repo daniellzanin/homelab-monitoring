@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # =============================================================
 # Unbound Log Report
-# Analisa logs da noite e manda resumo no Discord
+# Analisa logs do Unbound e escreve state file para o unified
+# Executa somente quando métricas DNS indicam degradação
 # =============================================================
 
 import subprocess
@@ -9,14 +10,23 @@ import os
 from datetime import datetime
 
 from .homelab_lib import (
-    DISCORD_WEBHOOK,
     call_ollama,
-    webhook_send_or_edit,
+    query_prometheus,
     write_state,
 )
 
-MESSAGE_FILE      = os.environ.get("UNBOUND_LOG_MESSAGE_FILE", "./data/unbound-log-message-id.txt")
 UNBOUND_STATE_FILE = os.environ.get("UNBOUND_STATE_FILE", "./data/state/unbound_report.json")
+
+CACHE_HIT_QUERY      = 'sum(rate(unbound_cache_hits_total[5m]))/(sum(rate(unbound_cache_hits_total[5m]))+sum(rate(unbound_cache_misses_total[5m])))*100'
+QUERIES_EXCEEDED_QUERY = "rate(unbound_request_list_exceeded_total[5m])"
+
+
+def dns_needs_inspection():
+    cache_hit        = query_prometheus(CACHE_HIT_QUERY)
+    queries_exceeded = query_prometheus(QUERIES_EXCEEDED_QUERY)
+    degraded_cache   = cache_hit is not None and cache_hit < 60
+    has_exceeded     = queries_exceeded is not None and queries_exceeded > 0
+    return degraded_cache or has_exceeded, cache_hit, queries_exceeded
 
 
 def get_logs():
@@ -52,25 +62,26 @@ Seja direto. Se nao houver nada relevante, diga apenas: Logs normais, nenhum eve
 Maximo 10 linhas. Formate para Discord.""".format(now, logs)
 
 
-def send_discord(analysis):
-    now_str = datetime.now().strftime("%d/%m/%Y as %H:%M")
-    payload = {
-        "embeds": [{
-            "title": "📋 Logs Unbound — Últimas 8h",
-            "description": analysis,
-            "color": 0x3b82f6,
-            "footer": {"text": "{} • Homelab Monitor".format(now_str)}
-        }]
-    }
-    webhook_send_or_edit(payload, MESSAGE_FILE)
-
-
 def main():
     print("=" * 50)
     print("Unbound Log Report — {}".format(datetime.now().strftime("%d/%m/%Y %H:%M")))
     print("=" * 50)
 
-    print("Coletando logs...")
+    needs, cache_hit, exceeded = dns_needs_inspection()
+    if not needs:
+        print("  DNS saudavel (cache {}, exceeded {}) — analise de logs ignorada.".format(
+            "{:.1f}%".format(cache_hit) if cache_hit is not None else "N/A",
+            "{:.4f}/s".format(exceeded) if exceeded is not None else "0",
+        ))
+        write_state(UNBOUND_STATE_FILE, {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "has_issues": False,
+            "analysis": "DNS normal (verificado via métricas Prometheus).",
+        })
+        print("  State file escrito: {}".format(UNBOUND_STATE_FILE))
+        return
+
+    print("  DNS com sinais de degradacao — coletando logs...")
     logs = get_logs()
     print("  {} linhas coletadas".format(len(logs.splitlines())))
 
@@ -90,8 +101,6 @@ def main():
         "analysis": analysis,
     })
     print("  State file escrito: {}".format(UNBOUND_STATE_FILE))
-
-    send_discord(analysis)
     print("Concluido!")
 
 

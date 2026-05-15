@@ -10,14 +10,11 @@ from .homelab_lib import (
     load_history,
     query_prometheus,
     read_state,
-    webhook_send_or_edit,
     write_state,
 )
 
 app = Flask(__name__)
 
-ALERT_WEBHOOK      = os.environ.get("ALERT_WEBHOOK", "")
-ALERT_MSG_FILE     = os.environ.get("ALERT_MSG_FILE", "./data/alert-message-id.txt")
 GRAFANA_STATE_FILE = os.environ.get("GRAFANA_STATE_FILE", "./data/state/grafana_alerts.json")
 
 
@@ -53,26 +50,6 @@ def get_historical_context():
     return "\n".join(lines) if lines else "Estaveis vs ontem."
 
 
-def send_discord(analysis, alert_name, state, severity):
-    now_str = datetime.now().strftime("%d/%m/%Y as %H:%M")
-    if state in ["alerting", "firing"]:
-        color, icon = 0xef4444, "🔴"
-    elif state in ["ok", "resolved", "normal"]:
-        color, icon = 0x10b981, "✅"
-    else:
-        color, icon = 0xf59e0b, "⚠️"
-
-    payload = {
-        "embeds": [{
-            "title": "{} {}".format(icon, alert_name),
-            "description": analysis,
-            "color": color,
-            "footer": {"text": "{} • {} • {}".format(now_str, state.upper(), severity.upper())}
-        }]
-    }
-    webhook_send_or_edit(payload, ALERT_MSG_FILE, ALERT_WEBHOOK)
-
-
 def process_alert(data):
     try:
         state_data = read_state(GRAFANA_STATE_FILE)
@@ -96,7 +73,6 @@ Responda: 1) O que e e gravidade. 2) Agir agora ou ignorar. Sem titulos. Maximo 
 
             print("Analisando: {}".format(alert_name))
             analysis = call_ollama(prompt, temperature=0.4, num_predict=80)
-            send_discord(analysis, alert_name, state, severity)
 
             if state in ("resolved", "ok", "normal"):
                 active_alerts = [a for a in active_alerts if a.get("name") != alert_name]

@@ -1,13 +1,17 @@
-# Fixed Discord monitoring panel
+# Fixed Discord monitoring panel (updates every 3 minutes)
 */3 * * * * cd /opt/homelab-monitoring && PYTHONPATH=/opt/homelab-monitoring/src /usr/bin/python3 -m homelab_monitoring.discord_unified >> /var/log/homelab-discord-unified.log 2>&1
 
 # Speedtest metrics to Pushgateway
 0 3,10,15,18 * * * /opt/homelab-monitoring/scripts/speedtest-prometheus.sh >> /var/log/speedtest.log 2>&1
 
-# Reports
-0 7 * * * cd /opt/homelab-monitoring && PYTHONPATH=/opt/homelab-monitoring/src /usr/bin/python3 -m homelab_monitoring.unbound_log_report >> /var/log/unbound-log-report.log 2>&1
+# Daily snapshot + Ollama narrative -> state file
 0 8,20 * * * cd /opt/homelab-monitoring && PYTHONPATH=/opt/homelab-monitoring/src /usr/bin/python3 -m homelab_monitoring.monitor >> /var/log/network-monitor.log 2>&1
-0 9 * * 0 cd /opt/homelab-monitoring && PYTHONPATH=/opt/homelab-monitoring/src /usr/bin/python3 -m homelab_monitoring.weekly_report >> /var/log/weekly-report.log 2>&1
 
-# Statistical anomaly detector
+# Statistical anomaly detector -> state file
 0 */4 * * * cd /opt/homelab-monitoring && PYTHONPATH=/opt/homelab-monitoring/src /usr/bin/python3 -m homelab_monitoring.anomaly_detector >> /var/log/anomaly-detector.log 2>&1
+
+# Unbound log analysis -> state file (skips automatically when DNS metrics are healthy)
+0 7 * * * cd /opt/homelab-monitoring && PYTHONPATH=/opt/homelab-monitoring/src /usr/bin/python3 -m homelab_monitoring.unbound_log_report >> /var/log/unbound-log-report.log 2>&1
+
+# Weekly report (own Discord message + summary state file)
+0 9 * * 0 cd /opt/homelab-monitoring && PYTHONPATH=/opt/homelab-monitoring/src /usr/bin/python3 -m homelab_monitoring.weekly_report >> /var/log/weekly-report.log 2>&1

@@ -14,11 +14,9 @@ from .homelab_lib import (
     call_ollama,
     load_history,
     query_prometheus,
-    webhook_send_or_edit,
     write_state,
 )
 
-MESSAGE_FILE      = os.environ.get("ANOMALY_MESSAGE_FILE", "./data/anomaly-message-id.txt")
 OLLAMA_MODEL      = os.environ.get("ANOMALY_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
 ANOMALY_STATE_FILE = os.environ.get("ANOMALY_STATE_FILE", "./data/state/anomaly_state.json")
 THRESHOLD_SIGMA = 2.0
@@ -116,33 +114,6 @@ Sem titulos. Direto ao ponto. Formate para Discord com **negrito** no essencial.
     )
 
 
-def send_discord(analysis, anomalias):
-    now_str  = datetime.now().strftime("%d/%m/%Y as %H:%M")
-    max_sigma = max(a["sigma"] for a in anomalias)
-    if max_sigma >= 3.0:
-        color, icon, severity = 0xef4444, "🔴", "CRITICO"
-    else:
-        color, icon, severity = 0xf59e0b, "⚠️", "ATENCAO"
-
-    resumo = "\n".join([
-        "{} **{}**: `{:.1f}` vs media `{:.1f}` ({:.1f}σ)".format(
-            "📈" if a["label"] not in INVERTED_METRICS else "📉",
-            a["label"], a["atual"], a["media"], a["sigma"]
-        )
-        for a in anomalias
-    ])
-
-    payload = {
-        "embeds": [{
-            "title": "{} Anomalia Detectada — {}".format(icon, severity),
-            "description": "{}\n\n{}".format(resumo, analysis),
-            "color": color,
-            "footer": {"text": "{} • Detector de Anomalias • {}".format(now_str, OLLAMA_MODEL)}
-        }]
-    }
-    webhook_send_or_edit(payload, MESSAGE_FILE)
-
-
 def main():
     print("=" * 50)
     print("Anomaly Detector — {}".format(datetime.now().strftime("%d/%m/%Y %H:%M")))
@@ -200,8 +171,6 @@ def main():
         "analysis": analysis,
     })
     print("  State file escrito: {}".format(ANOMALY_STATE_FILE))
-
-    send_discord(analysis, anomalias)
     print("Concluido!")
 
 

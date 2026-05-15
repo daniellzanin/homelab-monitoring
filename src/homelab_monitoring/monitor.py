@@ -1,28 +1,24 @@
 #!/usr/bin/env python3
 # =============================================================
 # Homelab Network Monitor
-# Prometheus -> Ollama -> Discord
+# Prometheus -> Ollama -> state file
 # =============================================================
 
 import json
 import os
-import sys
 from datetime import datetime
 
 from .homelab_lib import (
-    DISCORD_WEBHOOK,
     OLLAMA_MODEL,
     call_ollama,
     load_history,
     query_prometheus,
-    webhook_send_or_edit,
     write_state,
 )
 
 # ── Configuração local ────────────────────────────────────────
-HISTORY_FILE = os.environ.get("HISTORY_FILE", "./data/history.json")
-MESSAGE_FILE = os.environ.get("MONITOR_MESSAGE_FILE", "./data/discord_message_id.txt")
-DAILY_STATE_FILE = os.environ.get("DAILY_STATE_FILE", "./data/state/daily_analysis.json")
+HISTORY_FILE     = os.environ.get("HISTORY_FILE",       "./data/history.json")
+DAILY_STATE_FILE = os.environ.get("DAILY_STATE_FILE",   "./data/state/daily_analysis.json")
 
 # ── Métricas ──────────────────────────────────────────────────
 METRICS = [
@@ -101,12 +97,6 @@ def classify(value, warn, crit, invert):
         if value >= crit: return "CRITICO"
         if value >= warn: return "ATENCAO"
         return "OK"
-
-def embed_color(results):
-    statuses = [r["status"] for r in results]
-    if "CRITICO" in statuses: return 0xef4444
-    if "ATENCAO" in statuses: return 0xf59e0b
-    return 0x10b981
 
 def fmt(value, unit, decimals=2):
     if value is None:
@@ -189,36 +179,6 @@ Escreva UM PARAGRAFO CURTO de avaliacao da rede, estilo previsao do tempo. Seja 
         now, metrics_text, historical_text
     )
 
-def send_discord(analysis, results):
-    print("Enviando para Discord...")
-
-    ok    = sum(1 for r in results if r["status"] == "OK")
-    warn  = sum(1 for r in results if r["status"] == "ATENCAO")
-    crit  = sum(1 for r in results if r["status"] == "CRITICO")
-    total = len(results)
-
-    now_str = datetime.now().strftime("%d/%m/%Y as %H:%M")
-
-    if crit > 0:
-        status_line = "⛈️ {} problema(s) critico(s) detectado(s)".format(crit)
-    elif warn > 0:
-        status_line = "🌥️ {} item(ns) em atencao".format(warn)
-    else:
-        status_line = "☀️ Tudo dentro do normal ({}/{} OK)".format(ok, total)
-
-    payload = {
-        "embeds": [{
-            "title": "📡 Analise Diaria — Homelab Pato Branco",
-            "description": "{}\n\n{}".format(status_line, analysis),
-            "color": embed_color(results),
-            "footer": {
-                "text": "{} • {} • Homelab Monitor".format(now_str, OLLAMA_MODEL)
-            },
-            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        }]
-    }
-    webhook_send_or_edit(payload, MESSAGE_FILE, DISCORD_WEBHOOK)
-
 def main():
     print("=" * 50)
     print("Homelab Monitor — {}".format(datetime.now().strftime("%d/%m/%Y %H:%M")))
@@ -247,8 +207,6 @@ def main():
         "crit": crit,
     })
     print("  State file escrito: {}".format(DAILY_STATE_FILE))
-
-    send_discord(analysis, results)
 
     print("=" * 50)
     print("Concluido!")
