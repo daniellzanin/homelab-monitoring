@@ -5,10 +5,9 @@ homelab-discord-unified.py
 
 import os
 import sys
-import requests
 from datetime import datetime, timezone, timedelta
 
-from .homelab_lib import bot_send_or_edit, read_state
+from .homelab_lib import bot_send_or_edit, query_prometheus, read_state
 
 try:
     from uptime_kuma_api import UptimeKumaApi
@@ -16,9 +15,8 @@ except ImportError:
     UptimeKumaApi = None
 
 
-DISCORD_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
-CHANNEL_ID = os.environ.get("DISCORD_CHANNEL_ID", "1500579545974046913")
-PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://10.0.100.191:9090/api/v1/query")
+DISCORD_TOKEN        = os.environ.get("DISCORD_BOT_TOKEN", "")
+CHANNEL_ID           = os.environ.get("DISCORD_CHANNEL_ID", "1500579545974046913")
 PUBLIC_DASHBOARD_URL = os.environ.get("PUBLIC_DASHBOARD_URL", "https://mubola.com.br/homelab/index.html")
 KUMA_URL = os.environ.get("KUMA_URL", "http://10.0.100.203:3001")
 KUMA_USER = os.environ.get("KUMA_USER", "kuma")
@@ -33,23 +31,6 @@ GRAFANA_STATE_FILE = os.environ.get("GRAFANA_STATE_FILE", "./data/state/grafana_
 if not DISCORD_TOKEN:
     print("ERRO: variável de ambiente DISCORD_BOT_TOKEN não definida.")
     sys.exit(1)
-
-
-def query(promql: str):
-    try:
-        r = requests.get(PROMETHEUS_URL, params={"query": promql}, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        result = data.get("data", {}).get("result", [])
-        if result:
-            return float(result[0]["value"][1])
-    except requests.exceptions.Timeout:
-        print(f"[WARN] Prometheus timeout: {promql[:100]}...")
-    except requests.exceptions.RequestException as e:
-        print(f"[WARN] Prometheus erro de conexão: {e}")
-    except (KeyError, ValueError, IndexError, TypeError) as e:
-        print(f"[WARN] Resposta inesperada do Prometheus: {e}")
-    return None
 
 
 def safe_round(v, decimals=1):
@@ -96,14 +77,14 @@ SCORE_QUERY = (
 
 def get_network_metrics():
     return {
-        "score": safe_round(query(SCORE_QUERY), 1),
-        "uptime": safe_round((query('avg_over_time(probe_success{job="blackbox_icmp",instance="Cloudflare"}[24h])') or 0) * 100, 2),
-        "latencia": safe_round(query('avg(probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"}) * 1000'), 2),
-        "jitter": safe_round(query('avg(stddev_over_time((probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"} * 1000)[5m:]))'), 3),
-        "dns": safe_round(query('probe_dns_duration_seconds{job="blackbox_dns",phase="request"} * 1000'), 3),
-        "cache": safe_round(query(CACHE_QUERY), 1),
-        "tcp_discord": safe_round(query('avg(probe_duration_seconds{job="blackbox_tcp",instance=~"Discord.*"}) * 1000'), 1),
-        "tcp_steam": safe_round(query('probe_duration_seconds{job="blackbox_tcp",instance="Steam TCP"} * 1000'), 1),
+        "score": safe_round(query_prometheus(SCORE_QUERY), 1),
+        "uptime": safe_round((query_prometheus('avg_over_time(probe_success{job="blackbox_icmp",instance="Cloudflare"}[24h])') or 0) * 100, 2),
+        "latencia": safe_round(query_prometheus('avg(probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"}) * 1000'), 2),
+        "jitter": safe_round(query_prometheus('avg(stddev_over_time((probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"} * 1000)[5m:]))'), 3),
+        "dns": safe_round(query_prometheus('probe_dns_duration_seconds{job="blackbox_dns",phase="request"} * 1000'), 3),
+        "cache": safe_round(query_prometheus(CACHE_QUERY), 1),
+        "tcp_discord": safe_round(query_prometheus('avg(probe_duration_seconds{job="blackbox_tcp",instance=~"Discord.*"}) * 1000'), 1),
+        "tcp_steam": safe_round(query_prometheus('probe_duration_seconds{job="blackbox_tcp",instance="Steam TCP"} * 1000'), 1),
     }
 
 
@@ -142,7 +123,7 @@ DIAG_MAP = {
 
 
 def get_diagnostico():
-    val = query(DIAG_QUERY)
+    val = query_prometheus(DIAG_QUERY)
     if val is not None and int(val) > 0:
         return (*DIAG_MAP[int(val)], int(val))
     return "✅", "Normal", 0
@@ -151,15 +132,15 @@ def get_diagnostico():
 def get_eventos_recentes():
     eventos = []
 
-    http_pico = query('max_over_time(avg(probe_duration_seconds{job="blackbox_http"})[30m:1m]) * 1000')
+    http_pico = query_prometheus('max_over_time(avg(probe_duration_seconds{job="blackbox_http"})[30m:1m]) * 1000')
     if http_pico is not None and http_pico > 2000:
         eventos.append(f"📈 HTTP teve pico de `{round(http_pico)}ms`")
 
-    tcp_pico = query('max_over_time(avg(probe_duration_seconds{job="blackbox_tcp"})[30m:1m]) * 1000')
+    tcp_pico = query_prometheus('max_over_time(avg(probe_duration_seconds{job="blackbox_tcp"})[30m:1m]) * 1000')
     if tcp_pico is not None and tcp_pico > 300:
         eventos.append(f"📈 TCP teve pico de `{round(tcp_pico)}ms`")
 
-    dns_pico = query('max_over_time(probe_dns_duration_seconds{job="blackbox_dns",phase="request"}[30m]) * 1000')
+    dns_pico = query_prometheus('max_over_time(probe_dns_duration_seconds{job="blackbox_dns",phase="request"}[30m]) * 1000')
     if dns_pico is not None and dns_pico > 150:
         eventos.append(f"🔍 DNS teve pico de `{round(dns_pico, 1)}ms`")
 
@@ -169,37 +150,37 @@ def get_eventos_recentes():
 def check_alerts(metrics):
     alerts = []
 
-    loss = query('avg_over_time((sum_over_time((1 - probe_success{job="blackbox_icmp"})[5m:10s]) / count_over_time(probe_success{job="blackbox_icmp"}[5m:10s]))[2m:30s])')
+    loss = query_prometheus('avg_over_time((sum_over_time((1 - probe_success{job="blackbox_icmp"})[5m:10s]) / count_over_time(probe_success{job="blackbox_icmp"}[5m:10s]))[2m:30s])')
     if loss is not None and loss > 0.03:
         alerts.append(f"🔴 Perda de pacotes: `{round(loss * 100, 1)}%`")
 
-    jitter_avg = query('avg_over_time(avg(stddev_over_time((probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"} * 1000)[5m:]))[3m:30s])')
+    jitter_avg = query_prometheus('avg_over_time(avg(stddev_over_time((probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"} * 1000)[5m:]))[3m:30s])')
     if jitter_avg is not None and jitter_avg > 10:
         alerts.append(f"🟡 Jitter alto: `{round(jitter_avg, 1)}ms`")
 
-    lat_avg = query('avg_over_time(avg(probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"})[3m:30s]) * 1000')
+    lat_avg = query_prometheus('avg_over_time(avg(probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"})[3m:30s]) * 1000')
     if lat_avg is not None and lat_avg > 80:
         alerts.append(f"🔴 Latência alta: `{round(lat_avg, 1)}ms`")
 
     dns_current = metrics.get("dns")
-    dns_p95 = query('quantile_over_time(0.95, probe_dns_duration_seconds{job="blackbox_dns",phase="request"}[5m]) * 1000')
+    dns_p95 = query_prometheus('quantile_over_time(0.95, probe_dns_duration_seconds{job="blackbox_dns",phase="request"}[5m]) * 1000')
     if isinstance(dns_current, float) and isinstance(dns_p95, float) and dns_current > 10 and dns_p95 > 30:
         alerts.append(f"🟡 DNS instável: `{round(dns_current, 1)}ms` (p95 {round(dns_p95, 1)}ms)")
 
     cache = metrics.get("cache")
-    cache_samples_15m = query('sum(increase(unbound_cache_hits_total[15m])) + sum(increase(unbound_cache_misses_total[15m]))')
+    cache_samples_15m = query_prometheus('sum(increase(unbound_cache_hits_total[15m])) + sum(increase(unbound_cache_misses_total[15m]))')
     if isinstance(cache, float) and cache < 50 and isinstance(cache_samples_15m, float) and cache_samples_15m > 100:
         alerts.append(f"🟡 Cache DNS baixo: `{cache}%`")
 
-    cpu = query('avg_over_time(mktxp_system_cpu_load{routerboard_name="RouterCasa"}[2m])')
+    cpu = query_prometheus('avg_over_time(mktxp_system_cpu_load{routerboard_name="RouterCasa"}[2m])')
     if cpu is not None and cpu > 70:
         alerts.append(f"🔴 MikroTik CPU: `{round(cpu)}%`")
 
-    temp = query('avg_over_time(mktxp_system_cpu_temperature{routerboard_name="RouterCasa"}[3m])')
+    temp = query_prometheus('avg_over_time(mktxp_system_cpu_temperature{routerboard_name="RouterCasa"}[3m])')
     if temp is not None and temp > 70:
         alerts.append(f"🟡 MikroTik temp: `{round(temp)}°C`")
 
-    drops = query('avg_over_time(sum(rate(mktxp_interface_rx_drop_total{routerboard_name="RouterCasa"}[1m]))[2m:30s])')
+    drops = query_prometheus('avg_over_time(sum(rate(mktxp_interface_rx_drop_total{routerboard_name="RouterCasa"}[1m]))[2m:30s])')
     if drops is not None and drops > 10:
         alerts.append(f"🔴 Drops MikroTik: `{round(drops)}/s`")
 
@@ -208,7 +189,7 @@ def check_alerts(metrics):
         ("blackbox_icmp", "ICMP"),
         ("blackbox_tcp", "TCP"),
     ]:
-        down = query(f'count(avg_over_time(probe_success{{job="{job}"}}[3m]) < 0.5)')
+        down = query_prometheus(f'count(avg_over_time(probe_success{{job="{job}"}}[3m]) < 0.5)')
         if down is not None and down > 0:
             alerts.append(f"🔴 {label} offline: `{int(down)}` item(ns)")
 
@@ -267,13 +248,13 @@ def get_kuma_summary():
 
 def get_speedtest_metrics():
     return {
-        "dl_last": query("speedtest_download_bps"),
-        "ul_last": query("speedtest_upload_bps"),
-        "ping_last": query("speedtest_ping_ms"),
-        "dl_7d": query("avg_over_time(speedtest_download_bps[7d])"),
-        "ul_7d": query("avg_over_time(speedtest_upload_bps[7d])"),
-        "dl_7d_min": query("min_over_time(speedtest_download_bps[7d])"),
-        "ul_7d_min": query("min_over_time(speedtest_upload_bps[7d])"),
+        "dl_last": query_prometheus("speedtest_download_bps"),
+        "ul_last": query_prometheus("speedtest_upload_bps"),
+        "ping_last": query_prometheus("speedtest_ping_ms"),
+        "dl_7d": query_prometheus("avg_over_time(speedtest_download_bps[7d])"),
+        "ul_7d": query_prometheus("avg_over_time(speedtest_upload_bps[7d])"),
+        "dl_7d_min": query_prometheus("min_over_time(speedtest_download_bps[7d])"),
+        "ul_7d_min": query_prometheus("min_over_time(speedtest_upload_bps[7d])"),
     }
 
 
@@ -422,6 +403,7 @@ def build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma
             ),
             "inline": False,
         },
+        {"name": "​", "value": "─" * 38, "inline": False},
         {
             "name": "📡 Internet",
             "value": (
@@ -450,14 +432,28 @@ def build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma
         {"name": "🚀 Speedtest", "value": build_speedtest_text(speed), "inline": False},
     ]
 
+    daily   = state.get("daily",   {})
+    anomaly = state.get("anomaly", {})
+    unbound = state.get("unbound", {})
+    grafana = state.get("grafana", {})
+
+    has_conditional = bool(
+        eventos or alerts
+        or daily.get("analysis")
+        or anomaly.get("has_anomalies")
+        or (unbound.get("has_issues") and unbound.get("analysis"))
+        or grafana.get("active_alerts")
+    )
+
+    if has_conditional:
+        fields.append({"name": "​", "value": "─" * 38, "inline": False})
+
     if eventos:
         fields.append({"name": "🕐 Eventos recentes — 30min", "value": "\n".join(f"• {e}" for e in eventos), "inline": False})
 
     if alerts:
         fields.append({"name": "⚠️ Alertas ativos", "value": "\n".join(f"• {a}" for a in alerts), "inline": False})
 
-    # ── Campos dos state files ────────────────────────────────────
-    daily = state.get("daily", {})
     if daily.get("analysis"):
         ts_hora = daily["timestamp"][11:16] if len(daily.get("timestamp", "")) >= 16 else "?"
         fields.append({
@@ -466,7 +462,6 @@ def build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma
             "inline": False,
         })
 
-    anomaly = state.get("anomaly", {})
     if anomaly.get("has_anomalies"):
         ts_hora = anomaly["timestamp"][11:16] if len(anomaly.get("timestamp", "")) >= 16 else "?"
         linhas = [
@@ -483,7 +478,6 @@ def build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma
             "inline": False,
         })
 
-    unbound = state.get("unbound", {})
     if unbound.get("has_issues") and unbound.get("analysis"):
         ts_hora = unbound["timestamp"][11:16] if len(unbound.get("timestamp", "")) >= 16 else "?"
         fields.append({
@@ -492,7 +486,6 @@ def build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma
             "inline": False,
         })
 
-    grafana = state.get("grafana", {})
     if grafana.get("active_alerts"):
         linhas = [
             "🔴 **{}** ({}) — {}".format(
