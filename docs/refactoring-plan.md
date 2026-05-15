@@ -190,16 +190,18 @@ cat data/state/daily_analysis.json
 
 ## FASE 2 — Validação em paralelo
 
-**Duração recomendada:** 1 semana completa (para cobrir o ciclo do weekly report).
-**Ação:** nenhuma alteração de código. Apenas observar.
+**Concluída em 2026-05-15** (todos os scripts rodados manualmente).
 
 ### Checklist Fase 2
 
-- [ ] Confirmar campo "🤖 Análise IA" aparece às 08:00 e 20:00
-- [ ] Forçar anomalia manualmente (alterar threshold temporariamente) e confirmar campo no unified
-- [ ] Confirmar campo "📋 DNS Logs" quando `unbound_log_report.py` rodar (07:00)
-- [ ] Aguardar domingo: confirmar linha semanal na description do unified
-- [ ] Simular alerta Grafana via `curl` e confirmar campo no unified
+- [x] Confirmar campo "🤖 Análise IA" aparece → validado manualmente (monitor.py)
+- [x] Forçar anomalia → detector encontrou anomalia real (DNS Response 2.1σ), campo apareceu no unified
+- [x] Confirmar campo "📋 DNS Logs" → `has_issues: false`, campo corretamente ausente
+- [x] Confirmar linha semanal na description → weekly_report.py rodado manualmente, `weekly: True` no unified
+- [x] Simular alerta Grafana via `curl` → alerting criou entrada, resolved limpou, campo apareceu no unified
+
+**Nota:** `summary_line` do weekly ficou com o título markdown (`### Relatório...`) em vez de linha
+resumo curta. Ajustar o prompt do `weekly_report.py` na Fase 4 (limpeza final).
 
 ```bash
 # Simular alerta Grafana para teste
