@@ -94,7 +94,12 @@ def main():
     print("-" * 40)
 
     analysis_lower = analysis.lower()
-    has_issues = not ("normais" in analysis_lower and "nenhum" in analysis_lower)
+    ok_patterns = (
+        "normais", "nenhum evento", "nenhum problema", "sem problemas",
+        "sem eventos", "tudo bem", "tudo ok", "tudo normal",
+        "nada relevante", "nada de relevante",
+    )
+    has_issues = not any(p in analysis_lower for p in ok_patterns)
     write_state(UNBOUND_STATE_FILE, {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "has_issues": has_issues,

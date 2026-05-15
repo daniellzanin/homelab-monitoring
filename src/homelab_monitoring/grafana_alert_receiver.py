@@ -71,12 +71,12 @@ Responda: 1) O que e e gravidade. 2) Agir agora ou ignorar. Sem titulos. Maximo 
                 value=value, metricas=get_context_metrics(), historico=get_historical_context()
             )
 
-            print("Analisando: {}".format(alert_name))
-            analysis = call_ollama(prompt, temperature=0.4, num_predict=80)
-
             if state in ("resolved", "ok", "normal"):
                 active_alerts = [a for a in active_alerts if a.get("name") != alert_name]
+                print("Alerta '{}' resolvido — removido da lista.".format(alert_name))
             else:
+                print("Analisando: {}".format(alert_name))
+                analysis = call_ollama(prompt, temperature=0.4, num_predict=80)
                 active_alerts = [a for a in active_alerts if a.get("name") != alert_name]
                 active_alerts.append({
                     "name": alert_name,
