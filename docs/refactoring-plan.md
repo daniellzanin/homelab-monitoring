@@ -317,7 +317,7 @@ grep -r "send_discord\|webhook_send_or_edit\|bot_send_or_edit" src/
 - Deploy alvo: `/opt/homelab-monitoring` (ver `docs/deployment-plan.md`)
 - Biblioteca compartilhada: `src/homelab_monitoring/homelab_lib.py`
 - Painel ao vivo: `src/homelab_monitoring/discord_unified.py` (a cada 3 min via cron)
-- LLM: Ollama em `http://10.0.100.187:11434`, modelo `qwen2.5:3b`
+- LLM: Ollama (endereço via `OLLAMA_URL`), modelo `qwen2.5:3b`
 - Este repositório é independente de `homelab-bot`, `cs2-ranking` e `steamwatch`
 
 ---

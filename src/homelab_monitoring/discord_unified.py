@@ -16,9 +16,9 @@ except ImportError:
 
 
 DISCORD_TOKEN        = os.environ.get("DISCORD_BOT_TOKEN", "")
-CHANNEL_ID           = os.environ.get("DISCORD_CHANNEL_ID", "1500579545974046913")
+CHANNEL_ID           = os.environ.get("DISCORD_CHANNEL_ID", "")
 PUBLIC_DASHBOARD_URL = os.environ.get("PUBLIC_DASHBOARD_URL", "https://mubola.com.br/homelab/index.html")
-KUMA_URL = os.environ.get("KUMA_URL", "http://10.0.100.203:3001")
+KUMA_URL = os.environ.get("KUMA_URL", "http://localhost:3001")
 KUMA_USER = os.environ.get("KUMA_USER", "kuma")
 KUMA_PASS = os.environ.get("KUMA_PASS", "")
 MESSAGE_ID_FILE    = os.environ.get("UNIFIED_MESSAGE_ID_FILE", "./data/unified_message_id.txt")
