@@ -15,10 +15,12 @@ from .homelab_lib import (
     load_history,
     query_prometheus,
     webhook_send_or_edit,
+    write_state,
 )
 
-MESSAGE_FILE    = os.environ.get("ANOMALY_MESSAGE_FILE", "./data/anomaly-message-id.txt")
-OLLAMA_MODEL    = os.environ.get("ANOMALY_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+MESSAGE_FILE      = os.environ.get("ANOMALY_MESSAGE_FILE", "./data/anomaly-message-id.txt")
+OLLAMA_MODEL      = os.environ.get("ANOMALY_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+ANOMALY_STATE_FILE = os.environ.get("ANOMALY_STATE_FILE", "./data/state/anomaly_state.json")
 THRESHOLD_SIGMA = 2.0
 
 METRICS_QUERIES = {
@@ -165,6 +167,13 @@ def main():
 
     if not anomalias:
         print("Nenhuma anomalia detectada. Tudo dentro do padrao historico.")
+        write_state(ANOMALY_STATE_FILE, {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "has_anomalies": False,
+            "anomalies": [],
+            "analysis": "",
+        })
+        print("  State file escrito: {}".format(ANOMALY_STATE_FILE))
         return
 
     print("\n{} anomalia(s) detectada(s):".format(len(anomalias)))
@@ -180,6 +189,17 @@ def main():
     print("-" * 40)
     print(analysis)
     print("-" * 40)
+
+    write_state(ANOMALY_STATE_FILE, {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "has_anomalies": True,
+        "anomalies": [
+            {"label": a["label"], "atual": a["atual"], "media": a["media"], "sigma": round(a["sigma"], 2)}
+            for a in anomalias
+        ],
+        "analysis": analysis,
+    })
+    print("  State file escrito: {}".format(ANOMALY_STATE_FILE))
 
     send_discord(analysis, anomalias)
     print("Concluido!")

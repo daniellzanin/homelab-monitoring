@@ -12,9 +12,11 @@ from .homelab_lib import (
     DISCORD_WEBHOOK,
     call_ollama,
     webhook_send_or_edit,
+    write_state,
 )
 
-MESSAGE_FILE = os.environ.get("UNBOUND_LOG_MESSAGE_FILE", "./data/unbound-log-message-id.txt")
+MESSAGE_FILE      = os.environ.get("UNBOUND_LOG_MESSAGE_FILE", "./data/unbound-log-message-id.txt")
+UNBOUND_STATE_FILE = os.environ.get("UNBOUND_STATE_FILE", "./data/state/unbound_report.json")
 
 
 def get_logs():
@@ -79,6 +81,15 @@ def main():
     print("-" * 40)
     print(analysis)
     print("-" * 40)
+
+    analysis_lower = analysis.lower()
+    has_issues = not ("normais" in analysis_lower and "nenhum" in analysis_lower)
+    write_state(UNBOUND_STATE_FILE, {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "has_issues": has_issues,
+        "analysis": analysis,
+    })
+    print("  State file escrito: {}".format(UNBOUND_STATE_FILE))
 
     send_discord(analysis)
     print("Concluido!")

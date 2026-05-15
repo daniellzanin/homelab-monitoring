@@ -16,11 +16,13 @@ from .homelab_lib import (
     load_history,
     query_prometheus,
     webhook_send_or_edit,
+    write_state,
 )
 
 # ── Configuração local ────────────────────────────────────────
 HISTORY_FILE = os.environ.get("HISTORY_FILE", "./data/history.json")
 MESSAGE_FILE = os.environ.get("MONITOR_MESSAGE_FILE", "./data/discord_message_id.txt")
+DAILY_STATE_FILE = os.environ.get("DAILY_STATE_FILE", "./data/state/daily_analysis.json")
 
 # ── Métricas ──────────────────────────────────────────────────
 METRICS = [
@@ -231,6 +233,20 @@ def main():
     print("-" * 40)
     print(analysis)
     print("-" * 40)
+
+    ok   = sum(1 for r in results if r["status"] == "OK")
+    warn = sum(1 for r in results if r["status"] == "ATENCAO")
+    crit = sum(1 for r in results if r["status"] == "CRITICO")
+    overall = "CRITICO" if crit > 0 else ("ATENCAO" if warn > 0 else "OK")
+    write_state(DAILY_STATE_FILE, {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "analysis": analysis,
+        "status": overall,
+        "ok": ok,
+        "warn": warn,
+        "crit": crit,
+    })
+    print("  State file escrito: {}".format(DAILY_STATE_FILE))
 
     send_discord(analysis, results)
 

@@ -8,7 +8,7 @@ import sys
 import requests
 from datetime import datetime, timezone, timedelta
 
-from .homelab_lib import bot_send_or_edit
+from .homelab_lib import bot_send_or_edit, read_state
 
 try:
     from uptime_kuma_api import UptimeKumaApi
@@ -23,7 +23,12 @@ PUBLIC_DASHBOARD_URL = os.environ.get("PUBLIC_DASHBOARD_URL", "https://mubola.co
 KUMA_URL = os.environ.get("KUMA_URL", "http://10.0.100.203:3001")
 KUMA_USER = os.environ.get("KUMA_USER", "kuma")
 KUMA_PASS = os.environ.get("KUMA_PASS", "")
-MESSAGE_ID_FILE = os.environ.get("UNIFIED_MESSAGE_ID_FILE", "./data/unified_message_id.txt")
+MESSAGE_ID_FILE    = os.environ.get("UNIFIED_MESSAGE_ID_FILE", "./data/unified_message_id.txt")
+DAILY_STATE_FILE   = os.environ.get("DAILY_STATE_FILE",   "./data/state/daily_analysis.json")
+ANOMALY_STATE_FILE = os.environ.get("ANOMALY_STATE_FILE", "./data/state/anomaly_state.json")
+UNBOUND_STATE_FILE = os.environ.get("UNBOUND_STATE_FILE", "./data/state/unbound_report.json")
+WEEKLY_STATE_FILE  = os.environ.get("WEEKLY_STATE_FILE",  "./data/state/weekly_summary.json")
+GRAFANA_STATE_FILE = os.environ.get("GRAFANA_STATE_FILE", "./data/state/grafana_alerts.json")
 
 if not DISCORD_TOKEN:
     print("ERRO: variável de ambiente DISCORD_BOT_TOKEN não definida.")
@@ -373,10 +378,38 @@ def build_speedtest_text(speed):
     )
 
 
-def build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma, speed):
+def _state_age_hours(ts_str: str) -> float:
+    """Retorna quantas horas se passaram desde o timestamp ISO do state file."""
+    try:
+        ts = datetime.fromisoformat(ts_str)
+        return (datetime.now() - ts).total_seconds() / 3600
+    except Exception:
+        return float("inf")
+
+
+def load_state_data() -> dict:
+    """Lê todos os state files e retorna dict com os dados relevantes."""
+    daily   = read_state(DAILY_STATE_FILE)
+    anomaly = read_state(ANOMALY_STATE_FILE)
+    unbound = read_state(UNBOUND_STATE_FILE)
+    weekly  = read_state(WEEKLY_STATE_FILE)
+    grafana = read_state(GRAFANA_STATE_FILE)
+    return {
+        "daily":   daily   if daily   and _state_age_hours(daily.get("timestamp",   "")) < 13  else {},
+        "anomaly": anomaly if anomaly else {},
+        "unbound": unbound if unbound else {},
+        "weekly":  weekly  if weekly  and _state_age_hours(weekly.get("timestamp",  "")) < 168 else {},
+        "grafana": grafana if grafana else {},
+    }
+
+
+def build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma, speed, state=None):
+    state = state or {}
     now = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y às %H:%M")
     score = metrics["score"]
     resumo = resumo_humano(metrics, diag_val, eventos, alerts, kuma)
+
+    weekly_line = state.get("weekly", {}).get("summary_line", "")
 
     fields = [
         {
@@ -423,10 +456,65 @@ def build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma
     if alerts:
         fields.append({"name": "⚠️ Alertas ativos", "value": "\n".join(f"• {a}" for a in alerts), "inline": False})
 
+    # ── Campos dos state files ────────────────────────────────────
+    daily = state.get("daily", {})
+    if daily.get("analysis"):
+        ts_hora = daily["timestamp"][11:16] if len(daily.get("timestamp", "")) >= 16 else "?"
+        fields.append({
+            "name": f"🤖 Análise IA — última às {ts_hora}",
+            "value": daily["analysis"][:900],
+            "inline": False,
+        })
+
+    anomaly = state.get("anomaly", {})
+    if anomaly.get("has_anomalies"):
+        ts_hora = anomaly["timestamp"][11:16] if len(anomaly.get("timestamp", "")) >= 16 else "?"
+        linhas = [
+            "📈 **{}**: `{:.1f}` vs média `{:.1f}` ({:.1f}σ)".format(
+                a["label"], a["atual"], a["media"], a["sigma"]
+            )
+            for a in anomaly.get("anomalies", [])
+        ]
+        resumo_an = "\n".join(linhas)
+        analise_an = anomaly.get("analysis", "")[:600]
+        fields.append({
+            "name": f"⚠️ Anomalias Detectadas — {ts_hora}",
+            "value": (resumo_an + "\n" + analise_an).strip()[:1024],
+            "inline": False,
+        })
+
+    unbound = state.get("unbound", {})
+    if unbound.get("has_issues") and unbound.get("analysis"):
+        ts_hora = unbound["timestamp"][11:16] if len(unbound.get("timestamp", "")) >= 16 else "?"
+        fields.append({
+            "name": f"📋 DNS Logs — {ts_hora}",
+            "value": unbound["analysis"][:800],
+            "inline": False,
+        })
+
+    grafana = state.get("grafana", {})
+    if grafana.get("active_alerts"):
+        linhas = [
+            "🔴 **{}** ({}) — {}".format(
+                a.get("name", "?"), a.get("severity", "?"),
+                a.get("analysis", "")[:120]
+            )
+            for a in grafana["active_alerts"][:5]
+        ]
+        fields.append({
+            "name": "🔔 Alertas Grafana",
+            "value": "\n".join(linhas)[:400],
+            "inline": False,
+        })
+
+    description = f"Atualizado em **{now}**\n[📊 Ver dashboard ao vivo]({PUBLIC_DASHBOARD_URL})"
+    if weekly_line:
+        description += f"\n{weekly_line}"
+
     return {
         "embeds": [{
             "title": f"{score_emoji(score)} Homelab Monitor — Pato Branco, PR",
-            "description": f"Atualizado em **{now}**\n[📊 Ver dashboard ao vivo]({PUBLIC_DASHBOARD_URL})",
+            "description": description,
             "color": embed_color(score, alerts, kuma),
             "fields": fields,
             "footer": {"text": "Prometheus • Grafana • Blackbox Exporter • Unbound • MikroTik • Uptime Kuma • Speedtest"},
@@ -461,8 +549,12 @@ if __name__ == "__main__":
     speed = get_speedtest_metrics()
     print(speed)
 
+    print("Lendo state files...")
+    state = load_state_data()
+    print({k: bool(v) for k, v in state.items()})
+
     print("Montando embed...")
-    payload = build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma, speed)
+    payload = build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma, speed, state)
 
     print("Enviando para Discord...")
     bot_send_or_edit(payload, CHANNEL_ID, DISCORD_TOKEN, MESSAGE_ID_FILE)

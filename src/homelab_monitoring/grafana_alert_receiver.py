@@ -9,13 +9,16 @@ from .homelab_lib import (
     call_ollama,
     load_history,
     query_prometheus,
+    read_state,
     webhook_send_or_edit,
+    write_state,
 )
 
 app = Flask(__name__)
 
-ALERT_WEBHOOK = os.environ.get("ALERT_WEBHOOK", "")
-ALERT_MSG_FILE = os.environ.get("ALERT_MSG_FILE", "./data/alert-message-id.txt")
+ALERT_WEBHOOK      = os.environ.get("ALERT_WEBHOOK", "")
+ALERT_MSG_FILE     = os.environ.get("ALERT_MSG_FILE", "./data/alert-message-id.txt")
+GRAFANA_STATE_FILE = os.environ.get("GRAFANA_STATE_FILE", "./data/state/grafana_alerts.json")
 
 
 def get_context_metrics():
@@ -72,6 +75,9 @@ def send_discord(analysis, alert_name, state, severity):
 
 def process_alert(data):
     try:
+        state_data = read_state(GRAFANA_STATE_FILE)
+        active_alerts = state_data.get("active_alerts", [])
+
         for alert in data.get("alerts", []):
             alert_name  = alert.get("labels", {}).get("alertname", "Alerta")
             state       = alert.get("status", "unknown")
@@ -91,6 +97,23 @@ Responda: 1) O que e e gravidade. 2) Agir agora ou ignorar. Sem titulos. Maximo 
             print("Analisando: {}".format(alert_name))
             analysis = call_ollama(prompt, temperature=0.4, num_predict=80)
             send_discord(analysis, alert_name, state, severity)
+
+            if state in ("resolved", "ok", "normal"):
+                active_alerts = [a for a in active_alerts if a.get("name") != alert_name]
+            else:
+                active_alerts = [a for a in active_alerts if a.get("name") != alert_name]
+                active_alerts.append({
+                    "name": alert_name,
+                    "severity": severity,
+                    "state": state,
+                    "analysis": analysis,
+                })
+
+        write_state(GRAFANA_STATE_FILE, {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "active_alerts": active_alerts,
+        })
+        print("  State file escrito: {}".format(GRAFANA_STATE_FILE))
     except Exception as e:
         print("Erro: {}".format(e))
 

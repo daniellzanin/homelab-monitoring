@@ -14,9 +14,11 @@ from .homelab_lib import (
     call_ollama,
     load_history,
     webhook_send_or_edit,
+    write_state,
 )
 
-MESSAGE_FILE = os.environ.get("WEEKLY_MESSAGE_FILE", "./data/weekly-message-id.txt")
+MESSAGE_FILE      = os.environ.get("WEEKLY_MESSAGE_FILE", "./data/weekly-message-id.txt")
+WEEKLY_STATE_FILE = os.environ.get("WEEKLY_STATE_FILE", "./data/state/weekly_summary.json")
 
 
 def build_prompt(history):
@@ -120,6 +122,14 @@ def main():
     print("-" * 40)
     print(analysis)
     print("-" * 40)
+
+    summary_line = analysis.splitlines()[0] if analysis.splitlines() else analysis[:120]
+    write_state(WEEKLY_STATE_FILE, {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "summary_line": summary_line,
+        "full_analysis": analysis,
+    })
+    print("  State file escrito: {}".format(WEEKLY_STATE_FILE))
 
     send_discord(analysis)
     print("Concluido!")

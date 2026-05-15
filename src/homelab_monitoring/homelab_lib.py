@@ -83,6 +83,24 @@ def load_history(path: str = None) -> list:
     return []
 
 
+def write_state(path: str, data: dict) -> None:
+    """Escreve dados de estado em JSON para consumo pelo discord_unified."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def read_state(path: str) -> dict:
+    """Lê arquivo de estado JSON. Retorna dict vazio se não existir ou inválido."""
+    if os.path.exists(path):
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
 # ── Discord helpers (internos) ────────────────────────────────
 
 def _load_msg_id(path: str):

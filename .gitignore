@@ -10,6 +10,7 @@ venv/
 .env.*
 !.env.example
 data/
+data/state/
 *.log
 *.sqlite
 *.sqlite3
