@@ -172,7 +172,7 @@ Apenas adicionamos escrita de estado E leitura no unified.
 - [x] `weekly_report.py`: chamar `write_state(WEEKLY_STATE_FILE, {...})` com `summary_line` (1ª linha da analysis) e `full_analysis`
 - [x] `grafana_alert_receiver.py`: chamar `write_state(GRAFANA_STATE_FILE, {...})` ao receber alerta; limpar lista ao receber resolved
 - [x] `discord_unified.py`: adicionar leitura dos state files e novos campos no embed
-- [ ] Rodar cada script uma vez manualmente e confirmar os campos aparecem no unified
+- [x] Rodar cada script uma vez manualmente e confirmar os campos aparecem no unified
 
 **Validação da Fase 1:**
 ```bash
