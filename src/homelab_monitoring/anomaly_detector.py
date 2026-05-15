@@ -19,7 +19,19 @@ from .homelab_lib import (
 
 OLLAMA_MODEL      = os.environ.get("ANOMALY_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
 ANOMALY_STATE_FILE = os.environ.get("ANOMALY_STATE_FILE", "./data/state/anomaly_state.json")
-THRESHOLD_SIGMA = 2.0
+THRESHOLD_SIGMA = 3.0
+
+MIN_DELTA = {
+    "Latencia IPv4": 10.0,
+    "Latencia IPv6": 10.0,
+    "Jitter":         3.0,
+    "Perda Pacotes":  1.0,
+    "DNS Response":   5.0,
+    "Cache Hit":     10.0,
+    "Recursao avg":  20.0,
+    "MikroTik Temp":  5.0,
+    "MikroTik CPU":  20.0,
+}
 
 METRICS_QUERIES = {
     "Latencia IPv4":  'avg(probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"})*1000',
@@ -67,6 +79,9 @@ def detectar_anomalias(current_metrics, history):
 
         mean, std = calcular_stats(historicos)
         if std is None or std == 0:
+            continue
+
+        if abs(valor_atual - mean) < MIN_DELTA.get(label, 0):
             continue
 
         sigma = abs(valor_atual - mean) / std
