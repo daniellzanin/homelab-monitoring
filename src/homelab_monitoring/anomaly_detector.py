@@ -10,6 +10,7 @@ import sys
 from datetime import datetime
 
 from .homelab_lib import (
+    OLLAMA_MODEL as DEFAULT_OLLAMA_MODEL,
     call_ollama,
     load_history,
     query_prometheus,
@@ -17,7 +18,7 @@ from .homelab_lib import (
 )
 
 MESSAGE_FILE    = os.environ.get("ANOMALY_MESSAGE_FILE", "./data/anomaly-message-id.txt")
-OLLAMA_MODEL    = os.environ.get("ANOMALY_OLLAMA_MODEL", "llama3.1:8b")
+OLLAMA_MODEL    = os.environ.get("ANOMALY_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
 THRESHOLD_SIGMA = 2.0
 
 METRICS_QUERIES = {

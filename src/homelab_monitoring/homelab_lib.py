@@ -8,7 +8,7 @@ import requests
 # ── Constantes globais ────────────────────────────────────────
 PROMETHEUS_BASE = os.environ.get("PROMETHEUS_BASE", "http://localhost:9090")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:3b")
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")
 HISTORY_FILE = os.environ.get("HISTORY_FILE", "./data/history.json")
 

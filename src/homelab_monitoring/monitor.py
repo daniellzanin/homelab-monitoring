@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # =============================================================
 # Homelab Network Monitor
-# Prometheus -> Ollama (qwen2.5:7b) -> Discord
+# Prometheus -> Ollama -> Discord
 # =============================================================
 
 import json
