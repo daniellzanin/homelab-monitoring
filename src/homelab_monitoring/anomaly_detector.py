@@ -22,30 +22,30 @@ ANOMALY_STATE_FILE = os.environ.get("ANOMALY_STATE_FILE", "./data/state/anomaly_
 THRESHOLD_SIGMA = 3.0
 
 MIN_DELTA = {
-    "Latencia IPv4": 10.0,
-    "Latencia IPv6": 10.0,
-    "Jitter":         3.0,
-    "Perda Pacotes":  1.0,
-    "DNS Response":   5.0,
-    "Cache Hit":     10.0,
-    "Recursao avg":  20.0,
-    "MikroTik Temp":  5.0,
-    "MikroTik CPU":  20.0,
+    "Latencia IPv4":   10.0,
+    "Latencia IPv6":   10.0,
+    "Jitter IPv4":      3.0,
+    "Perda de Pacotes": 1.0,
+    "DNS Response":     5.0,
+    "Cache Hit Rate":  10.0,
+    "Recursao avg":    20.0,
+    "MikroTik Temp":    5.0,
+    "MikroTik CPU":    20.0,
 }
 
 METRICS_QUERIES = {
-    "Latencia IPv4":  'avg(probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"})*1000',
-    "Latencia IPv6":  'avg(probe_icmp_duration_seconds{job="blackbox_icmp_v6",phase="rtt"})*1000',
-    "Jitter":         'avg(stddev_over_time((probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"}*1000)[5m:]))',
-    "Perda Pacotes":  'avg(sum_over_time((1-probe_success{job="blackbox_icmp"})[5m:10s])/count_over_time(probe_success{job="blackbox_icmp"}[5m:10s]))*100',
-    "DNS Response":   'avg(probe_dns_duration_seconds{job="blackbox_dns",phase="request"})*1000',
-    "Cache Hit":      'sum(rate(unbound_cache_hits_total[5m]))/(sum(rate(unbound_cache_hits_total[5m]))+sum(rate(unbound_cache_misses_total[5m])))*100',
-    "Recursao avg":   'unbound_recursion_time_seconds_avg*1000',
-    "MikroTik Temp":  'mktxp_system_cpu_temperature{routerboard_name="RouterCasa"}',
-    "MikroTik CPU":   'mktxp_system_cpu_load{routerboard_name="RouterCasa"}',
+    "Latencia IPv4":   'avg(probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"})*1000',
+    "Latencia IPv6":   'avg(probe_icmp_duration_seconds{job="blackbox_icmp_v6",phase="rtt"})*1000',
+    "Jitter IPv4":     'avg(stddev_over_time((probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"}*1000)[5m:]))',
+    "Perda de Pacotes":'avg(sum_over_time((1-probe_success{job="blackbox_icmp"})[5m:10s])/count_over_time(probe_success{job="blackbox_icmp"}[5m:10s]))*100',
+    "DNS Response":    'avg(probe_dns_duration_seconds{job="blackbox_dns",phase="request"})*1000',
+    "Cache Hit Rate":  'sum(rate(unbound_cache_hits_total[5m]))/(sum(rate(unbound_cache_hits_total[5m]))+sum(rate(unbound_cache_misses_total[5m])))*100',
+    "Recursao avg":    'unbound_recursion_time_seconds_avg*1000',
+    "MikroTik Temp":   'mktxp_system_cpu_temperature{routerboard_name="RouterCasa"}',
+    "MikroTik CPU":    'mktxp_system_cpu_load{routerboard_name="RouterCasa"}',
 }
 
-INVERTED_METRICS = {"Cache Hit"}
+INVERTED_METRICS = {"Cache Hit Rate"}
 
 
 def calcular_stats(valores):
