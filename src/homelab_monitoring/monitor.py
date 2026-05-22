@@ -9,7 +9,21 @@ import os
 from datetime import datetime
 
 from .homelab_lib import (
+    MAX_HISTORY,
     OLLAMA_MODEL,
+    Q_CACHE_HIT,
+    Q_DNS_RESP,
+    Q_EXCEEDED,
+    Q_JITTER,
+    Q_LAT_IPV4,
+    Q_LAT_IPV6,
+    Q_PERDA,
+    Q_RB_CONN,
+    Q_RB_CPU,
+    Q_RB_TEMP,
+    Q_RECURSAO,
+    Q_UPTIME_24H,
+    SYSTEM_CONTEXT,
     call_ollama,
     load_history,
     query_prometheus,
@@ -22,66 +36,18 @@ DAILY_STATE_FILE = os.environ.get("DAILY_STATE_FILE",   "./data/state/daily_anal
 
 # ── Métricas ──────────────────────────────────────────────────
 METRICS = [
-    {
-        "label": "Latencia IPv4",
-        "query": 'avg(probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"})*1000',
-        "unit": "ms", "warn": 40, "crit": 80, "invert": False
-    },
-    {
-        "label": "Latencia IPv6",
-        "query": 'avg(probe_icmp_duration_seconds{job="blackbox_icmp_v6",phase="rtt"})*1000',
-        "unit": "ms", "warn": 40, "crit": 80, "invert": False
-    },
-    {
-        "label": "Jitter IPv4",
-        "query": 'avg(stddev_over_time((probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"}*1000)[5m:]))',
-        "unit": "ms", "warn": 5, "crit": 15, "invert": False
-    },
-    {
-        "label": "Perda de Pacotes",
-        "query": 'avg(sum_over_time((1-probe_success{job="blackbox_icmp"})[5m:10s])/count_over_time(probe_success{job="blackbox_icmp"}[5m:10s]))*100',
-        "unit": "%", "warn": 0.5, "crit": 2, "invert": False
-    },
-    {
-        "label": "DNS Response",
-        "query": 'avg(probe_dns_duration_seconds{job="blackbox_dns",phase="request"})*1000',
-        "unit": "ms", "warn": 10, "crit": 50, "invert": False
-    },
-    {
-        "label": "Cache Hit Rate",
-        "query": 'sum(rate(unbound_cache_hits_total[5m]))/(sum(rate(unbound_cache_hits_total[5m]))+sum(rate(unbound_cache_misses_total[5m])))*100',
-        "unit": "%", "warn": 50, "crit": 25, "invert": True
-    },
-    {
-        "label": "Recursao avg",
-        "query": "unbound_recursion_time_seconds_avg*1000",
-        "unit": "ms", "warn": 500, "crit": 800, "invert": False
-    },
-    {
-        "label": "Queries Exceeded",
-        "query": "rate(unbound_request_list_exceeded_total[5m])",
-        "unit": "/s", "warn": 0.1, "crit": 1, "invert": False
-    },
-    {
-        "label": "MikroTik Temp",
-        "query": 'mktxp_system_cpu_temperature{routerboard_name="RouterCasa"}',
-        "unit": "C", "warn": 60, "crit": 75, "invert": False
-    },
-    {
-        "label": "MikroTik CPU",
-        "query": 'mktxp_system_cpu_load{routerboard_name="RouterCasa"}',
-        "unit": "%", "warn": 70, "crit": 90, "invert": False
-    },
-    {
-        "label": "Conexoes Ativas",
-        "query": 'mktxp_ip_connections_total{routerboard_name="RouterCasa"}',
-        "unit": "", "warn": 5000, "crit": 15000, "invert": False
-    },
-    {
-        "label": "Uptime 24h",
-        "query": 'avg_over_time(probe_success{job="blackbox_icmp",instance="Cloudflare"}[24h])*100',
-        "unit": "%", "warn": 99, "crit": 95, "invert": True
-    },
+    {"label": "Latencia IPv4",    "query": Q_LAT_IPV4,   "unit": "ms", "warn": 40,    "crit": 80,    "invert": False},
+    {"label": "Latencia IPv6",    "query": Q_LAT_IPV6,   "unit": "ms", "warn": 40,    "crit": 80,    "invert": False},
+    {"label": "Jitter IPv4",      "query": Q_JITTER,     "unit": "ms", "warn": 5,     "crit": 15,    "invert": False},
+    {"label": "Perda de Pacotes", "query": Q_PERDA,      "unit": "%",  "warn": 0.5,   "crit": 2,     "invert": False},
+    {"label": "DNS Response",     "query": Q_DNS_RESP,   "unit": "ms", "warn": 10,    "crit": 50,    "invert": False},
+    {"label": "Cache Hit Rate",   "query": Q_CACHE_HIT,  "unit": "%",  "warn": 50,    "crit": 25,    "invert": True},
+    {"label": "Recursao avg",     "query": Q_RECURSAO,   "unit": "ms", "warn": 500,   "crit": 800,   "invert": False},
+    {"label": "Queries Exceeded", "query": Q_EXCEEDED,   "unit": "/s", "warn": 0.1,   "crit": 1,     "invert": False},
+    {"label": "MikroTik Temp",    "query": Q_RB_TEMP,    "unit": "C",  "warn": 60,    "crit": 75,    "invert": False},
+    {"label": "MikroTik CPU",     "query": Q_RB_CPU,     "unit": "%",  "warn": 70,    "crit": 90,    "invert": False},
+    {"label": "Conexoes Ativas",  "query": Q_RB_CONN,    "unit": "",   "warn": 5000,  "crit": 15000, "invert": False},
+    {"label": "Uptime 24h",       "query": Q_UPTIME_24H, "unit": "%",  "warn": 99,    "crit": 95,    "invert": True},
 ]
 
 # ── Funções ───────────────────────────────────────────────────
@@ -128,8 +94,8 @@ def save_history(results):
         "metrics": {r["label"]: r["value"] for r in results}
     }
     history.append(entry)
-    if len(history) > 30:
-        history = history[-30:]
+    if len(history) > MAX_HISTORY:
+        history = history[-MAX_HISTORY:]
     os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
     with open(HISTORY_FILE, "w") as f:
         json.dump(history, f, indent=2)
@@ -170,13 +136,10 @@ METRICAS:
 {}
 
 CONTEXTO:
-- Roteador: MikroTik
-- DNS: AdGuard Home + Unbound recursivo com DNSSEC
-- Servidor: Debian 12 no Proxmox (Xeon E5-2680 v4, 64GB RAM)
-- ISP: fibra optica
+{}
 
 Escreva UM PARAGRAFO CURTO de avaliacao da rede, estilo previsao do tempo. Seja direto e natural, como se estivesse conversando com Daniel. Comece com um emoji de clima indicando o estado geral. Mencione apenas o que for relevante — se tudo estiver normal, diga isso de forma tranquila. Se houver algo fora do padrao, explique brevemente o que e e o que pode ter causado. Nao liste metricas, nao use topicos, nao repita os numeros todos — apenas interprete e converse. Maximo 4 linhas.""".format(
-        now, metrics_text, historical_text
+        now, metrics_text, historical_text, SYSTEM_CONTEXT
     )
 
 def main():

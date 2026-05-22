@@ -6,6 +6,14 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 
 from .homelab_lib import (
+    Q_CACHE_HIT,
+    Q_DNS_RESP,
+    Q_JITTER,
+    Q_LAT_IPV4,
+    Q_PERDA,
+    Q_RB_CPU,
+    Q_RB_TEMP,
+    SYSTEM_CONTEXT,
     call_ollama,
     load_history,
     query_prometheus,
@@ -17,16 +25,19 @@ app = Flask(__name__)
 
 GRAFANA_STATE_FILE = os.environ.get("GRAFANA_STATE_FILE", "./data/state/grafana_alerts.json")
 
+# Lock para evitar race condition quando múltiplos alertas chegam ao mesmo tempo
+_alert_lock = threading.Lock()
+
 
 def get_context_metrics():
     queries = {
-        "Latencia IPv4": 'avg(probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"})*1000',
-        "Jitter":        'avg(stddev_over_time((probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"}*1000)[5m:]))',
-        "Perda Pacotes": 'avg(sum_over_time((1-probe_success{job="blackbox_icmp"})[5m:10s])/count_over_time(probe_success{job="blackbox_icmp"}[5m:10s]))*100',
-        "DNS Response":  'avg(probe_dns_duration_seconds{job="blackbox_dns",phase="request"})*1000',
-        "Cache Hit":     'sum(rate(unbound_cache_hits_total[5m]))/(sum(rate(unbound_cache_hits_total[5m]))+sum(rate(unbound_cache_misses_total[5m])))*100',
-        "MikroTik Temp": 'mktxp_system_cpu_temperature{routerboard_name="RouterCasa"}',
-        "MikroTik CPU":  'mktxp_system_cpu_load{routerboard_name="RouterCasa"}',
+        "Latencia IPv4": Q_LAT_IPV4,
+        "Jitter":        Q_JITTER,
+        "Perda Pacotes": Q_PERDA,
+        "DNS Response":  Q_DNS_RESP,
+        "Cache Hit":     Q_CACHE_HIT,
+        "MikroTik Temp": Q_RB_TEMP,
+        "MikroTik CPU":  Q_RB_CPU,
     }
     lines = []
     for label, query in queries.items():
@@ -51,47 +62,53 @@ def get_historical_context():
 
 
 def process_alert(data):
-    try:
-        state_data = read_state(GRAFANA_STATE_FILE)
-        active_alerts = state_data.get("active_alerts", [])
+    with _alert_lock:
+        try:
+            state_data = read_state(GRAFANA_STATE_FILE)
+            active_alerts = state_data.get("active_alerts", [])
 
-        for alert in data.get("alerts", []):
-            alert_name  = alert.get("labels", {}).get("alertname", "Alerta")
-            state       = alert.get("status", "unknown")
-            severity    = alert.get("labels", {}).get("severity", "unknown")
-            summary     = alert.get("annotations", {}).get("summary", "")
-            value       = alert.get("values", {})
+            for alert in data.get("alerts", []):
+                alert_name = alert.get("labels", {}).get("alertname", "Alerta")
+                state      = alert.get("status", "unknown")
+                severity   = alert.get("labels", {}).get("severity", "unknown")
+                summary    = alert.get("annotations", {}).get("summary", "")
+                value      = alert.get("values", {})
 
-            prompt = """Analise este alerta do homelab de Daniel (Pato Branco PR) em 2 frases curtas apenas:
+                if state in ("resolved", "ok", "normal"):
+                    active_alerts = [a for a in active_alerts if a.get("name") != alert_name]
+                    print("Alerta '{}' resolvido — removido da lista.".format(alert_name))
+                else:
+                    prompt = """Analise este alerta do homelab de Daniel (Pato Branco PR) em 2 frases curtas apenas:
 Alerta: {alert_name} | Estado: {state} | {summary} | Valor: {value}
 Metricas agora: {metricas}
 Historico: {historico}
+
+CONTEXTO:
+{contexto}
+
 Responda: 1) O que e e gravidade. 2) Agir agora ou ignorar. Sem titulos. Maximo 2 frases.""".format(
-                alert_name=alert_name, state=state, summary=summary,
-                value=value, metricas=get_context_metrics(), historico=get_historical_context()
-            )
+                        alert_name=alert_name, state=state, summary=summary,
+                        value=value, metricas=get_context_metrics(),
+                        historico=get_historical_context(), contexto=SYSTEM_CONTEXT,
+                    )
 
-            if state in ("resolved", "ok", "normal"):
-                active_alerts = [a for a in active_alerts if a.get("name") != alert_name]
-                print("Alerta '{}' resolvido — removido da lista.".format(alert_name))
-            else:
-                print("Analisando: {}".format(alert_name))
-                analysis = call_ollama(prompt, temperature=0.4, num_predict=80)
-                active_alerts = [a for a in active_alerts if a.get("name") != alert_name]
-                active_alerts.append({
-                    "name": alert_name,
-                    "severity": severity,
-                    "state": state,
-                    "analysis": analysis,
-                })
+                    print("Analisando: {}".format(alert_name))
+                    analysis = call_ollama(prompt, temperature=0.4, num_predict=80)
+                    active_alerts = [a for a in active_alerts if a.get("name") != alert_name]
+                    active_alerts.append({
+                        "name": alert_name,
+                        "severity": severity,
+                        "state": state,
+                        "analysis": analysis,
+                    })
 
-        write_state(GRAFANA_STATE_FILE, {
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "active_alerts": active_alerts,
-        })
-        print("  State file escrito: {}".format(GRAFANA_STATE_FILE))
-    except Exception as e:
-        print("Erro: {}".format(e))
+            write_state(GRAFANA_STATE_FILE, {
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "active_alerts": active_alerts,
+            })
+            print("  State file escrito: {}".format(GRAFANA_STATE_FILE))
+        except Exception as e:
+            print("Erro: {}".format(e))
 
 
 @app.route("/alert", methods=["POST"])

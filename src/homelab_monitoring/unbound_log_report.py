@@ -10,6 +10,8 @@ import os
 from datetime import datetime
 
 from .homelab_lib import (
+    Q_CACHE_HIT,
+    Q_EXCEEDED,
     call_ollama,
     query_prometheus,
     write_state,
@@ -17,13 +19,10 @@ from .homelab_lib import (
 
 UNBOUND_STATE_FILE = os.environ.get("UNBOUND_STATE_FILE", "./data/state/unbound_report.json")
 
-CACHE_HIT_QUERY      = 'sum(rate(unbound_cache_hits_total[5m]))/(sum(rate(unbound_cache_hits_total[5m]))+sum(rate(unbound_cache_misses_total[5m])))*100'
-QUERIES_EXCEEDED_QUERY = "rate(unbound_request_list_exceeded_total[5m])"
-
 
 def dns_needs_inspection():
-    cache_hit        = query_prometheus(CACHE_HIT_QUERY)
-    queries_exceeded = query_prometheus(QUERIES_EXCEEDED_QUERY)
+    cache_hit        = query_prometheus(Q_CACHE_HIT)
+    queries_exceeded = query_prometheus(Q_EXCEEDED)
     degraded_cache   = cache_hit is not None and cache_hit < 60
     has_exceeded     = queries_exceeded is not None and queries_exceeded > 0
     return degraded_cache or has_exceeded, cache_hit, queries_exceeded
@@ -93,16 +92,10 @@ def main():
     print(analysis)
     print("-" * 40)
 
-    analysis_lower = analysis.lower()
-    ok_patterns = (
-        "normais", "nenhum evento", "nenhum problema", "sem problemas",
-        "sem eventos", "tudo bem", "tudo ok", "tudo normal",
-        "nada relevante", "nada de relevante",
-    )
-    has_issues = not any(p in analysis_lower for p in ok_patterns)
+    # Métricas já indicavam degradação — sempre exibir análise no painel
     write_state(UNBOUND_STATE_FILE, {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "has_issues": has_issues,
+        "has_issues": True,
         "analysis": analysis,
     })
     print("  State file escrito: {}".format(UNBOUND_STATE_FILE))

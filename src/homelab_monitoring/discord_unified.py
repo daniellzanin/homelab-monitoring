@@ -7,7 +7,14 @@ import os
 import sys
 from datetime import datetime, timezone, timedelta
 
-from .homelab_lib import bot_send_or_edit, query_prometheus, read_state
+from .homelab_lib import (
+    Q_CACHE_HIT,
+    ROUTERBOARD_NAME,
+    bot_send_or_edit,
+    query_prometheus,
+    read_state,
+    truncate_field,
+)
 
 try:
     from uptime_kuma_api import UptimeKumaApi
@@ -49,12 +56,6 @@ def fmt_ms(v, decimals=1):
     return f"{v:.{decimals}f} ms"
 
 
-CACHE_QUERY = (
-    'sum(rate(unbound_cache_hits_total[5m])) '
-    '/ clamp_min('
-    'sum(rate(unbound_cache_hits_total[5m])) + sum(rate(unbound_cache_misses_total[5m])), '
-    '0.001) * 100'
-)
 
 SCORE_QUERY = (
     'clamp('
@@ -82,7 +83,7 @@ def get_network_metrics():
         "latencia": safe_round(query_prometheus('avg(probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"}) * 1000'), 2),
         "jitter": safe_round(query_prometheus('avg(stddev_over_time((probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"} * 1000)[5m:]))'), 3),
         "dns": safe_round(query_prometheus('probe_dns_duration_seconds{job="blackbox_dns",phase="request"} * 1000'), 3),
-        "cache": safe_round(query_prometheus(CACHE_QUERY), 1),
+        "cache": safe_round(query_prometheus(Q_CACHE_HIT), 1),
         "tcp_discord": safe_round(query_prometheus('avg(probe_duration_seconds{job="blackbox_tcp",instance=~"Discord.*"}) * 1000'), 1),
         "tcp_steam": safe_round(query_prometheus('probe_duration_seconds{job="blackbox_tcp",instance="Steam TCP"} * 1000'), 1),
     }
@@ -172,15 +173,15 @@ def check_alerts(metrics):
     if isinstance(cache, float) and cache < 50 and isinstance(cache_samples_15m, float) and cache_samples_15m > 100:
         alerts.append(f"🟡 Cache DNS baixo: `{cache}%`")
 
-    cpu = query_prometheus('avg_over_time(mktxp_system_cpu_load{routerboard_name="RouterCasa"}[2m])')
+    cpu = query_prometheus(f'avg_over_time(mktxp_system_cpu_load{{routerboard_name="{ROUTERBOARD_NAME}"}}[2m])')
     if cpu is not None and cpu > 70:
         alerts.append(f"🔴 MikroTik CPU: `{round(cpu)}%`")
 
-    temp = query_prometheus('avg_over_time(mktxp_system_cpu_temperature{routerboard_name="RouterCasa"}[3m])')
+    temp = query_prometheus(f'avg_over_time(mktxp_system_cpu_temperature{{routerboard_name="{ROUTERBOARD_NAME}"}}[3m])')
     if temp is not None and temp > 70:
         alerts.append(f"🟡 MikroTik temp: `{round(temp)}°C`")
 
-    drops = query_prometheus('avg_over_time(sum(rate(mktxp_interface_rx_drop_total{routerboard_name="RouterCasa"}[1m]))[2m:30s])')
+    drops = query_prometheus(f'avg_over_time(sum(rate(mktxp_interface_rx_drop_total{{routerboard_name="{ROUTERBOARD_NAME}"}}[1m]))[2m:30s])')
     if drops is not None and drops > 10:
         alerts.append(f"🔴 Drops MikroTik: `{round(drops)}/s`")
 
@@ -458,7 +459,7 @@ def build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma
         ts_hora = daily["timestamp"][11:16] if len(daily.get("timestamp", "")) >= 16 else "?"
         fields.append({
             "name": f"🤖 Análise IA — última às {ts_hora}",
-            "value": daily["analysis"][:900],
+            "value": truncate_field(daily["analysis"], 900),
             "inline": False,
         })
 
@@ -471,10 +472,10 @@ def build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma
             for a in anomaly.get("anomalies", [])
         ]
         resumo_an = "\n".join(linhas)
-        analise_an = anomaly.get("analysis", "")[:600]
+        analise_an = truncate_field(anomaly.get("analysis", ""), 600)
         fields.append({
             "name": f"⚠️ Anomalias Detectadas — {ts_hora}",
-            "value": (resumo_an + "\n" + analise_an).strip()[:1024],
+            "value": truncate_field((resumo_an + "\n" + analise_an).strip(), 1024),
             "inline": False,
         })
 
@@ -482,7 +483,7 @@ def build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma
         ts_hora = unbound["timestamp"][11:16] if len(unbound.get("timestamp", "")) >= 16 else "?"
         fields.append({
             "name": f"📋 DNS Logs — {ts_hora}",
-            "value": unbound["analysis"][:800],
+            "value": truncate_field(unbound["analysis"], 800),
             "inline": False,
         })
 
@@ -490,13 +491,13 @@ def build_embed(metrics, diag_emoji, diag_texto, diag_val, eventos, alerts, kuma
         linhas = [
             "🔴 **{}** ({}) — {}".format(
                 a.get("name", "?"), a.get("severity", "?"),
-                a.get("analysis", "")[:120]
+                truncate_field(a.get("analysis", ""), 120)
             )
             for a in grafana["active_alerts"][:5]
         ]
         fields.append({
             "name": "🔔 Alertas Grafana",
-            "value": "\n".join(linhas)[:400],
+            "value": truncate_field("\n".join(linhas), 400),
             "inline": False,
         })
 

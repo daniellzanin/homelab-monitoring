@@ -11,6 +11,7 @@ from .homelab_lib import (
     DISCORD_WEBHOOK,
     HISTORY_FILE,
     OLLAMA_MODEL,
+    SYSTEM_CONTEXT,
     call_ollama,
     load_history,
     webhook_send_or_edit,
@@ -65,10 +66,7 @@ RESUMO ESTATISTICO DA SEMANA:
 {}
 
 INFRAESTRUTURA:
-- Roteador: MikroTik
-- DNS: AdGuard Home + Unbound recursivo com DNSSEC
-- Servidor: Debian 12 no Proxmox (Xeon E5-2680 v4)
-- ISP: fibra optica em Pato Branco PR
+{}
 
 Gere um relatorio semanal em portugues com:
 1. Resumo geral da semana em uma linha (use emoji de clima)
@@ -79,7 +77,7 @@ Gere um relatorio semanal em portugues com:
 6. Ponto de atencao para a proxima semana
 
 Seja direto e tecnico mas acessivel. Use **negrito** nos valores importantes. Maximo 400 palavras. Formate bem para Discord.""".format(
-        now, len(semana), dados, medias_text
+        now, len(semana), dados, medias_text, SYSTEM_CONTEXT
     )
 
 

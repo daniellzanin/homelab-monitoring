@@ -6,20 +6,30 @@
 
 import math
 import os
-import sys
 from datetime import datetime
 
 from .homelab_lib import (
     OLLAMA_MODEL as DEFAULT_OLLAMA_MODEL,
+    Q_CACHE_HIT,
+    Q_DNS_RESP,
+    Q_JITTER,
+    Q_LAT_IPV4,
+    Q_LAT_IPV6,
+    Q_PERDA,
+    Q_RB_CPU,
+    Q_RB_TEMP,
+    Q_RECURSAO,
+    Q_UPTIME_24H,
+    SYSTEM_CONTEXT,
     call_ollama,
     load_history,
     query_prometheus,
     write_state,
 )
 
-OLLAMA_MODEL      = os.environ.get("ANOMALY_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+OLLAMA_MODEL       = os.environ.get("ANOMALY_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
 ANOMALY_STATE_FILE = os.environ.get("ANOMALY_STATE_FILE", "./data/state/anomaly_state.json")
-THRESHOLD_SIGMA = 3.0
+THRESHOLD_SIGMA    = float(os.environ.get("THRESHOLD_SIGMA", "3.0"))
 
 MIN_DELTA = {
     "Latencia IPv4":   10.0,
@@ -31,21 +41,24 @@ MIN_DELTA = {
     "Recursao avg":    20.0,
     "MikroTik Temp":    5.0,
     "MikroTik CPU":    20.0,
+    "Uptime 24h":       2.0,
 }
 
 METRICS_QUERIES = {
-    "Latencia IPv4":   'avg(probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"})*1000',
-    "Latencia IPv6":   'avg(probe_icmp_duration_seconds{job="blackbox_icmp_v6",phase="rtt"})*1000',
-    "Jitter IPv4":     'avg(stddev_over_time((probe_icmp_duration_seconds{job="blackbox_icmp",phase="rtt"}*1000)[5m:]))',
-    "Perda de Pacotes":'avg(sum_over_time((1-probe_success{job="blackbox_icmp"})[5m:10s])/count_over_time(probe_success{job="blackbox_icmp"}[5m:10s]))*100',
-    "DNS Response":    'avg(probe_dns_duration_seconds{job="blackbox_dns",phase="request"})*1000',
-    "Cache Hit Rate":  'sum(rate(unbound_cache_hits_total[5m]))/(sum(rate(unbound_cache_hits_total[5m]))+sum(rate(unbound_cache_misses_total[5m])))*100',
-    "Recursao avg":    'unbound_recursion_time_seconds_avg*1000',
-    "MikroTik Temp":   'mktxp_system_cpu_temperature{routerboard_name="RouterCasa"}',
-    "MikroTik CPU":    'mktxp_system_cpu_load{routerboard_name="RouterCasa"}',
+    "Latencia IPv4":    Q_LAT_IPV4,
+    "Latencia IPv6":    Q_LAT_IPV6,
+    "Jitter IPv4":      Q_JITTER,
+    "Perda de Pacotes": Q_PERDA,
+    "DNS Response":     Q_DNS_RESP,
+    "Cache Hit Rate":   Q_CACHE_HIT,
+    "Recursao avg":     Q_RECURSAO,
+    "MikroTik Temp":    Q_RB_TEMP,
+    "MikroTik CPU":     Q_RB_CPU,
+    "Uptime 24h":       Q_UPTIME_24H,
 }
 
-INVERTED_METRICS = {"Cache Hit Rate"}
+# Métricas onde valor abaixo da média é anomalia (ex: cache caindo, uptime caindo)
+INVERTED_METRICS = {"Cache Hit Rate", "Uptime 24h"}
 
 
 def calcular_stats(valores):
@@ -115,9 +128,7 @@ ANOMALIAS DETECTADAS (valores fora do padrao historico):
 {}
 
 CONTEXTO:
-- Roteador: MikroTik
-- DNS: AdGuard Home + Unbound recursivo com DNSSEC
-- ISP: fibra optica
+{}
 
 Analise as anomalias em 3 linhas curtas:
 1. O que esta fora do normal e o quanto (ex: latencia 3x acima da media)
@@ -125,7 +136,7 @@ Analise as anomalias em 3 linhas curtas:
 3. Agir agora, monitorar ou ignorar
 
 Sem titulos. Direto ao ponto. Formate para Discord com **negrito** no essencial.""".format(
-        now, "\n".join(linhas)
+        now, "\n".join(linhas), SYSTEM_CONTEXT
     )
 
 
